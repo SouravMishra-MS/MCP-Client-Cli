@@ -1,0 +1,157 @@
+2025-12-06 23:22:42,618 - httpx - INFO - HTTP Request: GET https://learn.microsoft.com/api/mcp "HTTP/1.1 405 Method Not Allowed"
+2025-12-06 23:24:42,472 - httpx - INFO - HTTP Request: GET https://learn.microsoft.com/api/mcp "HTTP/1.1 405 Method Not Allowed"
+2025-12-06 23:26:21,242 - httpx - INFO - HTTP Request: GET https://learn.microsoft.com/api/mcp "HTTP/1.1 405 Method Not Allowed"
+2025-12-07 00:13:18,275 - __main__ - INFO - Detected URL: https://learn.microsoft.com/api/mcp
+2025-12-07 00:13:19,145 - httpx - INFO - HTTP Request: GET https://learn.microsoft.com/api/mcp "HTTP/1.1 405 Method Not Allowed"
+2025-12-07 00:13:19,146 - __main__ - WARNING - SSE connection failed: unhandled errors in a TaskGroup (1 sub-exception). Trying Streamable HTTP...
+2025-12-07 00:13:19,146 - __main__ - ERROR - Both SSE and HTTP connections failed: name 'streamable_http_client' is not defined
+2025-12-07 00:13:39,080 - __main__ - INFO - Detected URL: https://learn.microsoft.com/api/mcp
+2025-12-07 00:13:39,925 - httpx - INFO - HTTP Request: GET https://learn.microsoft.com/api/mcp "HTTP/1.1 405 Method Not Allowed"
+2025-12-07 00:13:39,927 - __main__ - WARNING - SSE connection failed: unhandled errors in a TaskGroup (1 sub-exception). Trying Streamable HTTP...
+2025-12-07 00:13:40,507 - __main__ - ERROR - Both SSE and HTTP connections failed: ClientSession.__init__() got an unexpected keyword argument 'streams'
+2025-12-07 00:13:40,509 - asyncio - ERROR - an error occurred during closing of asynchronous generator <async_generator object streamablehttp_client at 0x0000027C493D41B0>
+asyncgen: <async_generator object streamablehttp_client at 0x0000027C493D41B0>
+  + Exception Group Traceback (most recent call last):
+  |   File "D:\Application_Samples\Projects\ConsoleMCPClient\mcp-client\.venv\Lib\site-packages\anyio\_backends\_asyncio.py", line 781, in __aexit__
+  |     raise BaseExceptionGroup(
+  |         "unhandled errors in a TaskGroup", self._exceptions
+  |     ) from None
+  | BaseExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "D:\Application_Samples\Projects\ConsoleMCPClient\mcp-client\.venv\Lib\site-packages\mcp\client\streamable_http.py", line 504, in streamablehttp_client
+    |     yield (
+    |     ...<3 lines>...
+    |     )
+    | GeneratorExit
+    +------------------------------------
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "D:\Application_Samples\Projects\ConsoleMCPClient\mcp-client\.venv\Lib\site-packages\mcp\client\streamable_http.py", line 480, in streamablehttp_client
+    async with anyio.create_task_group() as tg:
+               ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "D:\Application_Samples\Projects\ConsoleMCPClient\mcp-client\.venv\Lib\site-packages\anyio\_backends\_asyncio.py", line 787, in __aexit__
+    if self.cancel_scope.__exit__(type(exc), exc, exc.__traceback__):
+       ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Application_Samples\Projects\ConsoleMCPClient\mcp-client\.venv\Lib\site-packages\anyio\_backends\_asyncio.py", line 459, in __exit__
+    raise RuntimeError(
+    ...<2 lines>...
+    )
+RuntimeError: Attempted to exit cancel scope in a different task than it was entered in
+2025-12-07 00:17:51,091 - __main__ - INFO - Detected URL: https://learn.microsoft.com/api/mcp
+2025-12-07 00:17:51,963 - httpx - INFO - HTTP Request: GET https://learn.microsoft.com/api/mcp "HTTP/1.1 405 Method Not Allowed"
+2025-12-07 00:17:51,965 - __main__ - WARNING - SSE connection failed: unhandled errors in a TaskGroup (1 sub-exception). Trying Streamable HTTP...
+2025-12-07 00:17:52,524 - __main__ - ERROR - Both SSE and HTTP connections failed: too many values to unpack (expected 2)
+2025-12-07 00:20:55,201 - __main__ - INFO - Detected URL: https://learn.microsoft.com/api/mcp
+2025-12-07 00:20:56,387 - httpx - INFO - HTTP Request: GET https://learn.microsoft.com/api/mcp "HTTP/1.1 405 Method Not Allowed"
+2025-12-07 00:20:56,389 - __main__ - WARNING - SSE connection failed: unhandled errors in a TaskGroup (1 sub-exception). Trying Streamable HTTP...
+2025-12-07 00:20:57,431 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 200 OK"
+2025-12-07 00:20:57,432 - mcp.client.streamable_http - INFO - Received session ID: eyJjbGllbnRJbmZvIjp7Im5hbWUiOiJtY3AiLCJ0aXRsZSI6bnVsbCwidmVyc2lvbiI6IjAuMS4wIn0sInVzZXJJZENsYWltIjpudWxsfQ
+2025-12-07 00:20:57,434 - mcp.client.streamable_http - INFO - Negotiated protocol version: 2025-06-18
+2025-12-07 00:20:57,765 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 202 Accepted"
+2025-12-07 00:20:57,772 - httpx - INFO - HTTP Request: GET https://learn.microsoft.com/api/mcp "HTTP/1.1 405 Method Not Allowed"
+2025-12-07 00:20:58,082 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 200 OK"
+2025-12-07 00:20:58,084 - __main__ - INFO - Connected to Streamable HTTP MCP Server at https://learn.microsoft.com/api/mcp.
+2025-12-07 00:20:58,085 - __main__ - INFO - Available tools: ['microsoft_docs_search', 'microsoft_code_sample_search', 'microsoft_docs_fetch']
+2025-12-07 00:21:44,286 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 200 OK"
+2025-12-07 00:21:44,288 - __main__ - INFO - Sending query to gpt-5-nano: where can MIP SDK be used? What are its use cases
+2025-12-07 00:21:47,099 - httpx - INFO - HTTP Request: POST https://agent-chat.cognitiveservices.azure.com/openai/v1/chat/completions "HTTP/1.1 400 Bad Request"
+2025-12-07 00:21:47,101 - __main__ - ERROR - Error processing query: Error code: 400 - {'error': {'message': "Missing required parameter: 'tools[0].type'.", 'type': 'invalid_request_error', 'param': 'tools[0].type', 'code': 'missing_required_parameter'}}
+2025-12-07 00:24:50,631 - httpx - INFO - HTTP Request: DELETE https://learn.microsoft.com/api/mcp "HTTP/1.1 405 Method Not Allowed"
+2025-12-07 00:24:56,166 - __main__ - INFO - Detected URL: https://learn.microsoft.com/api/mcp
+2025-12-07 00:24:57,087 - httpx - INFO - HTTP Request: GET https://learn.microsoft.com/api/mcp "HTTP/1.1 405 Method Not Allowed"
+2025-12-07 00:24:57,088 - __main__ - WARNING - SSE connection failed: unhandled errors in a TaskGroup (1 sub-exception). Trying Streamable HTTP...
+2025-12-07 00:24:57,908 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 200 OK"
+2025-12-07 00:24:57,908 - mcp.client.streamable_http - INFO - Received session ID: eyJjbGllbnRJbmZvIjp7Im5hbWUiOiJtY3AiLCJ0aXRsZSI6bnVsbCwidmVyc2lvbiI6IjAuMS4wIn0sInVzZXJJZENsYWltIjpudWxsfQ
+2025-12-07 00:24:57,910 - mcp.client.streamable_http - INFO - Negotiated protocol version: 2025-06-18
+2025-12-07 00:24:58,222 - httpx - INFO - HTTP Request: GET https://learn.microsoft.com/api/mcp "HTTP/1.1 405 Method Not Allowed"
+2025-12-07 00:24:58,227 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 202 Accepted"
+2025-12-07 00:24:59,175 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 200 OK"
+2025-12-07 00:24:59,177 - __main__ - INFO - Connected to Streamable HTTP MCP Server at https://learn.microsoft.com/api/mcp.
+2025-12-07 00:24:59,177 - __main__ - INFO - Available tools: ['microsoft_docs_search', 'microsoft_code_sample_search', 'microsoft_docs_fetch']
+2025-12-07 00:25:07,477 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 200 OK"
+2025-12-07 00:25:07,481 - __main__ - INFO - Sending query to gpt-5-nano: What are the use cases of MIP SDK?
+2025-12-07 00:25:10,029 - httpx - INFO - HTTP Request: POST https://agent-chat.cognitiveservices.azure.com/openai/v1/chat/completions "HTTP/1.1 400 Bad Request"
+2025-12-07 00:25:10,030 - __main__ - ERROR - Error processing query: Error code: 400 - {'error': {'message': "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.", 'type': 'invalid_request_error', 'param': 'max_tokens', 'code': 'unsupported_parameter'}}
+2025-12-07 00:25:46,750 - httpx - INFO - HTTP Request: DELETE https://learn.microsoft.com/api/mcp "HTTP/1.1 405 Method Not Allowed"
+2025-12-07 00:25:51,876 - __main__ - INFO - Detected URL: https://learn.microsoft.com/api/mcp
+2025-12-07 00:25:52,762 - httpx - INFO - HTTP Request: GET https://learn.microsoft.com/api/mcp "HTTP/1.1 405 Method Not Allowed"
+2025-12-07 00:25:52,763 - __main__ - WARNING - SSE connection failed: unhandled errors in a TaskGroup (1 sub-exception). Trying Streamable HTTP...
+2025-12-07 00:25:53,607 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 200 OK"
+2025-12-07 00:25:53,608 - mcp.client.streamable_http - INFO - Received session ID: eyJjbGllbnRJbmZvIjp7Im5hbWUiOiJtY3AiLCJ0aXRsZSI6bnVsbCwidmVyc2lvbiI6IjAuMS4wIn0sInVzZXJJZENsYWltIjpudWxsfQ
+2025-12-07 00:25:53,609 - mcp.client.streamable_http - INFO - Negotiated protocol version: 2025-06-18
+2025-12-07 00:25:53,927 - httpx - INFO - HTTP Request: GET https://learn.microsoft.com/api/mcp "HTTP/1.1 405 Method Not Allowed"
+2025-12-07 00:25:53,930 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 202 Accepted"
+2025-12-07 00:25:54,237 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 200 OK"
+2025-12-07 00:25:54,239 - __main__ - INFO - Connected to Streamable HTTP MCP Server at https://learn.microsoft.com/api/mcp.
+2025-12-07 00:25:54,239 - __main__ - INFO - Available tools: ['microsoft_docs_search', 'microsoft_code_sample_search', 'microsoft_docs_fetch']
+2025-12-07 00:26:08,860 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 200 OK"
+2025-12-07 00:26:08,862 - __main__ - INFO - Sending query to gpt-5-nano: What are the use cases of MIP SDK?
+2025-12-07 00:26:13,177 - httpx - INFO - HTTP Request: POST https://agent-chat.cognitiveservices.azure.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2025-12-07 00:26:13,187 - __main__ - ERROR - Error processing query: 'ChatCompletion' object has no attribute 'content'
+2025-12-07 00:29:15,226 - httpx - INFO - HTTP Request: DELETE https://learn.microsoft.com/api/mcp "HTTP/1.1 405 Method Not Allowed"
+2025-12-07 00:29:20,570 - __main__ - INFO - Detected URL: https://learn.microsoft.com/api/mcp
+2025-12-07 00:29:21,533 - httpx - INFO - HTTP Request: GET https://learn.microsoft.com/api/mcp "HTTP/1.1 405 Method Not Allowed"
+2025-12-07 00:29:21,534 - __main__ - WARNING - SSE connection failed: unhandled errors in a TaskGroup (1 sub-exception). Trying Streamable HTTP...
+2025-12-07 00:29:22,463 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 200 OK"
+2025-12-07 00:29:22,463 - mcp.client.streamable_http - INFO - Received session ID: eyJjbGllbnRJbmZvIjp7Im5hbWUiOiJtY3AiLCJ0aXRsZSI6bnVsbCwidmVyc2lvbiI6IjAuMS4wIn0sInVzZXJJZENsYWltIjpudWxsfQ
+2025-12-07 00:29:22,465 - mcp.client.streamable_http - INFO - Negotiated protocol version: 2025-06-18
+2025-12-07 00:29:22,776 - httpx - INFO - HTTP Request: GET https://learn.microsoft.com/api/mcp "HTTP/1.1 405 Method Not Allowed"
+2025-12-07 00:29:22,779 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 202 Accepted"
+2025-12-07 00:29:23,094 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 200 OK"
+2025-12-07 00:29:23,096 - __main__ - INFO - Connected to Streamable HTTP MCP Server at https://learn.microsoft.com/api/mcp.
+2025-12-07 00:29:23,097 - __main__ - INFO - Available tools: ['microsoft_docs_search', 'microsoft_code_sample_search', 'microsoft_docs_fetch']
+2025-12-07 00:29:31,605 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 200 OK"
+2025-12-07 00:29:31,606 - __main__ - INFO - Sending query to gpt-5-nano: What are the use cases for MIP SDK?
+2025-12-07 00:29:37,428 - httpx - INFO - HTTP Request: POST https://agent-chat.cognitiveservices.azure.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2025-12-07 00:29:38,730 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 200 OK"
+2025-12-07 00:29:39,522 - httpx - INFO - HTTP Request: POST https://agent-chat.cognitiveservices.azure.com/openai/v1/chat/completions "HTTP/1.1 400 Bad Request"
+2025-12-07 00:29:39,523 - __main__ - ERROR - Error processing query: Error code: 400 - {'error': {'message': "Invalid value: 'tool_result'. Supported values are: 'text', 'image_url', 'input_audio', 'refusal', 'audio', and 'file'.", 'type': 'invalid_request_error', 'param': 'messages[2].content[0].type', 'code': 'invalid_value'}}
+2025-12-07 00:49:04,495 - httpx - INFO - HTTP Request: DELETE https://learn.microsoft.com/api/mcp "HTTP/1.1 405 Method Not Allowed"
+2025-12-07 00:49:11,580 - __main__ - INFO - Detected URL: https://learn.microsoft.com/api/mcp
+2025-12-07 00:49:12,485 - httpx - INFO - HTTP Request: GET https://learn.microsoft.com/api/mcp "HTTP/1.1 405 Method Not Allowed"
+2025-12-07 00:49:12,487 - __main__ - WARNING - SSE connection failed: unhandled errors in a TaskGroup (1 sub-exception). Trying Streamable HTTP...
+2025-12-07 00:49:13,312 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 200 OK"
+2025-12-07 00:49:13,312 - mcp.client.streamable_http - INFO - Received session ID: eyJjbGllbnRJbmZvIjp7Im5hbWUiOiJtY3AiLCJ0aXRsZSI6bnVsbCwidmVyc2lvbiI6IjAuMS4wIn0sInVzZXJJZENsYWltIjpudWxsfQ
+2025-12-07 00:49:13,314 - mcp.client.streamable_http - INFO - Negotiated protocol version: 2025-06-18
+2025-12-07 00:49:13,617 - httpx - INFO - HTTP Request: GET https://learn.microsoft.com/api/mcp "HTTP/1.1 405 Method Not Allowed"
+2025-12-07 00:49:13,624 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 202 Accepted"
+2025-12-07 00:49:13,928 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 200 OK"
+2025-12-07 00:49:13,930 - __main__ - INFO - Connected to Streamable HTTP MCP Server at https://learn.microsoft.com/api/mcp.
+2025-12-07 00:49:13,931 - __main__ - INFO - Available tools: ['microsoft_docs_search', 'microsoft_code_sample_search', 'microsoft_docs_fetch']
+2025-12-07 00:49:24,801 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 200 OK"
+2025-12-07 00:49:24,803 - __main__ - INFO - Sending query to gpt-5-nano: What are the use cases of MIP SDK?
+2025-12-07 00:49:28,704 - httpx - INFO - HTTP Request: POST https://agent-chat.cognitiveservices.azure.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2025-12-07 00:49:29,678 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 200 OK"
+2025-12-07 00:49:30,461 - httpx - INFO - HTTP Request: POST https://agent-chat.cognitiveservices.azure.com/openai/v1/chat/completions "HTTP/1.1 400 Bad Request"
+2025-12-07 00:49:30,462 - __main__ - ERROR - Error processing query: Error code: 400 - {'error': {'message': "An assistant message with 'tool_calls' must be followed by tool messages responding to each 'tool_call_id'. The following tool_call_ids did not have response messages: call_jZHyjkNzG28x0gBi78G9i2Kb", 'type': 'invalid_request_error', 'param': 'messages.[2].role', 'code': None}}
+2025-12-07 00:50:54,610 - httpx - INFO - HTTP Request: DELETE https://learn.microsoft.com/api/mcp "HTTP/1.1 405 Method Not Allowed"
+2025-12-07 00:51:00,492 - __main__ - INFO - Detected URL: https://learn.microsoft.com/api/mcp
+2025-12-07 00:51:01,335 - httpx - INFO - HTTP Request: GET https://learn.microsoft.com/api/mcp "HTTP/1.1 405 Method Not Allowed"
+2025-12-07 00:51:01,336 - __main__ - WARNING - SSE connection failed: unhandled errors in a TaskGroup (1 sub-exception). Trying Streamable HTTP...
+2025-12-07 00:51:02,255 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 200 OK"
+2025-12-07 00:51:02,256 - mcp.client.streamable_http - INFO - Received session ID: eyJjbGllbnRJbmZvIjp7Im5hbWUiOiJtY3AiLCJ0aXRsZSI6bnVsbCwidmVyc2lvbiI6IjAuMS4wIn0sInVzZXJJZENsYWltIjpudWxsfQ
+2025-12-07 00:51:02,258 - mcp.client.streamable_http - INFO - Negotiated protocol version: 2025-06-18
+2025-12-07 00:51:02,568 - httpx - INFO - HTTP Request: GET https://learn.microsoft.com/api/mcp "HTTP/1.1 405 Method Not Allowed"
+2025-12-07 00:51:03,220 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 202 Accepted"
+2025-12-07 00:51:03,524 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 200 OK"
+2025-12-07 00:51:03,526 - __main__ - INFO - Connected to Streamable HTTP MCP Server at https://learn.microsoft.com/api/mcp.
+2025-12-07 00:51:03,526 - __main__ - INFO - Available tools: ['microsoft_docs_search', 'microsoft_code_sample_search', 'microsoft_docs_fetch']
+2025-12-07 00:51:05,539 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 200 OK"
+2025-12-07 00:51:05,541 - __main__ - INFO - Sending query to gpt-5-nano: What are the use cases of MIP SDK?
+2025-12-07 00:51:10,414 - httpx - INFO - HTTP Request: POST https://agent-chat.cognitiveservices.azure.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2025-12-07 00:51:11,457 - httpx - INFO - HTTP Request: POST https://learn.microsoft.com/api/mcp "HTTP/1.1 200 OK"
+2025-12-07 00:51:21,119 - httpx - INFO - HTTP Request: POST https://agent-chat.cognitiveservices.azure.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2025-12-07 00:52:57,447 - httpx - INFO - HTTP Request: DELETE https://learn.microsoft.com/api/mcp "HTTP/1.1 405 Method Not Allowed"
+2025-12-07 01:16:04,822 - __main__ - INFO - Connected to stdio MCP Server using npx ['-y', '@azure-devops/mcp', 'ASIM-Security']. 
+2025-12-07 01:16:04,823 - __main__ - INFO - Available tools: ['core_list_project_teams', 'core_list_projects', 'core_get_identity_ids', 'work_list_team_iterations', 'work_create_iterations', 'work_list_iterations', 'work_assign_iterations', 'work_get_team_capacity', 'work_update_team_capacity', 'work_get_iteration_capacities', 'pipelines_get_build_definitions', 'pipelines_get_build_definition_revisions', 'pipelines_get_builds', 'pipelines_get_build_log', 'pipelines_get_build_log_by_id', 'pipelines_get_build_changes', 'pipelines_get_run', 'pipelines_list_runs', 'pipelines_run_pipeline', 'pipelines_get_build_status', 'pipelines_update_build_stage', 'repo_create_pull_request', 'repo_create_branch', 'repo_update_pull_request', 'repo_update_pull_request_reviewers', 'repo_list_repos_by_project', 'repo_list_pull_requests_by_repo_or_project', 'repo_list_pull_request_threads', 'repo_list_pull_request_thread_comments', 'repo_list_branches_by_repo', 'repo_list_my_branches_by_repo', 'repo_get_repo_by_name_or_id', 'repo_get_branch_by_name', 'repo_get_pull_request_by_id', 'repo_reply_to_comment', 'repo_create_pull_request_thread', 'repo_resolve_comment', 'repo_search_commits', 'repo_list_pull_requests_by_commits', 'wit_list_backlogs', 'wit_list_backlog_work_items', 'wit_my_work_items', 'wit_get_work_items_batch_by_ids', 'wit_get_work_item', 'wit_list_work_item_comments', 'wit_add_work_item_comment', 'wit_add_child_work_items', 'wit_link_work_item_to_pull_request', 'wit_get_work_items_for_iteration', 'wit_update_work_item', 'wit_get_work_item_type', 'wit_create_work_item', 'wit_get_query', 'wit_get_query_results_by_id', 'wit_update_work_items_batch', 'wit_work_items_link', 'wit_work_item_unlink', 'wit_add_artifact_link', 'wiki_get_wiki', 'wiki_list_wikis', 'wiki_list_pages', 'wiki_get_page', 'wiki_get_page_content', 'wiki_create_or_update_page', 'testplan_list_test_plans', 'testplan_create_test_plan', 'testplan_create_test_suite', 'testplan_add_test_cases_to_suite', 'testplan_create_test_case', 'testplan_update_test_case_steps', 'testplan_list_test_cases', 'testplan_show_test_results_from_build_id', 'search_code', 'search_wiki', 'search_workitem', 'advsec_get_alerts', 'advsec_get_alert_details']
+2025-12-07 01:17:07,663 - __main__ - INFO - Connected to stdio MCP Server using npx ['-y', '@azure-devops/mcp', 'ASIM-Security']. 
+2025-12-07 01:17:07,664 - __main__ - INFO - Available tools: ['core_list_project_teams', 'core_list_projects', 'core_get_identity_ids', 'work_list_team_iterations', 'work_create_iterations', 'work_list_iterations', 'work_assign_iterations', 'work_get_team_capacity', 'work_update_team_capacity', 'work_get_iteration_capacities', 'pipelines_get_build_definitions', 'pipelines_get_build_definition_revisions', 'pipelines_get_builds', 'pipelines_get_build_log', 'pipelines_get_build_log_by_id', 'pipelines_get_build_changes', 'pipelines_get_run', 'pipelines_list_runs', 'pipelines_run_pipeline', 'pipelines_get_build_status', 'pipelines_update_build_stage', 'repo_create_pull_request', 'repo_create_branch', 'repo_update_pull_request', 'repo_update_pull_request_reviewers', 'repo_list_repos_by_project', 'repo_list_pull_requests_by_repo_or_project', 'repo_list_pull_request_threads', 'repo_list_pull_request_thread_comments', 'repo_list_branches_by_repo', 'repo_list_my_branches_by_repo', 'repo_get_repo_by_name_or_id', 'repo_get_branch_by_name', 'repo_get_pull_request_by_id', 'repo_reply_to_comment', 'repo_create_pull_request_thread', 'repo_resolve_comment', 'repo_search_commits', 'repo_list_pull_requests_by_commits', 'wit_list_backlogs', 'wit_list_backlog_work_items', 'wit_my_work_items', 'wit_get_work_items_batch_by_ids', 'wit_get_work_item', 'wit_list_work_item_comments', 'wit_add_work_item_comment', 'wit_add_child_work_items', 'wit_link_work_item_to_pull_request', 'wit_get_work_items_for_iteration', 'wit_update_work_item', 'wit_get_work_item_type', 'wit_create_work_item', 'wit_get_query', 'wit_get_query_results_by_id', 'wit_update_work_items_batch', 'wit_work_items_link', 'wit_work_item_unlink', 'wit_add_artifact_link', 'wiki_get_wiki', 'wiki_list_wikis', 'wiki_list_pages', 'wiki_get_page', 'wiki_get_page_content', 'wiki_create_or_update_page', 'testplan_list_test_plans', 'testplan_create_test_plan', 'testplan_create_test_suite', 'testplan_add_test_cases_to_suite', 'testplan_create_test_case', 'testplan_update_test_case_steps', 'testplan_list_test_cases', 'testplan_show_test_results_from_build_id', 'search_code', 'search_wiki', 'search_workitem', 'advsec_get_alerts', 'advsec_get_alert_details']
+2025-12-07 01:17:17,940 - __main__ - INFO - Sending query to gpt-5-nano: how do I get MIP SDK logs
+2025-12-07 01:17:36,044 - httpx - INFO - HTTP Request: POST https://agent-chat.cognitiveservices.azure.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2025-12-07 01:26:29,274 - __main__ - INFO - Connected to stdio MCP Server using npx ['-y', '@azure-devops/mcp', 'ASIM-Security']. 
+2025-12-07 01:26:29,274 - __main__ - INFO - Available tools: ['core_list_project_teams', 'core_list_projects', 'core_get_identity_ids', 'work_list_team_iterations', 'work_create_iterations', 'work_list_iterations', 'work_assign_iterations', 'work_get_team_capacity', 'work_update_team_capacity', 'work_get_iteration_capacities', 'pipelines_get_build_definitions', 'pipelines_get_build_definition_revisions', 'pipelines_get_builds', 'pipelines_get_build_log', 'pipelines_get_build_log_by_id', 'pipelines_get_build_changes', 'pipelines_get_run', 'pipelines_list_runs', 'pipelines_run_pipeline', 'pipelines_get_build_status', 'pipelines_update_build_stage', 'repo_create_pull_request', 'repo_create_branch', 'repo_update_pull_request', 'repo_update_pull_request_reviewers', 'repo_list_repos_by_project', 'repo_list_pull_requests_by_repo_or_project', 'repo_list_pull_request_threads', 'repo_list_pull_request_thread_comments', 'repo_list_branches_by_repo', 'repo_list_my_branches_by_repo', 'repo_get_repo_by_name_or_id', 'repo_get_branch_by_name', 'repo_get_pull_request_by_id', 'repo_reply_to_comment', 'repo_create_pull_request_thread', 'repo_resolve_comment', 'repo_search_commits', 'repo_list_pull_requests_by_commits', 'wit_list_backlogs', 'wit_list_backlog_work_items', 'wit_my_work_items', 'wit_get_work_items_batch_by_ids', 'wit_get_work_item', 'wit_list_work_item_comments', 'wit_add_work_item_comment', 'wit_add_child_work_items', 'wit_link_work_item_to_pull_request', 'wit_get_work_items_for_iteration', 'wit_update_work_item', 'wit_get_work_item_type', 'wit_create_work_item', 'wit_get_query', 'wit_get_query_results_by_id', 'wit_update_work_items_batch', 'wit_work_items_link', 'wit_work_item_unlink', 'wit_add_artifact_link', 'wiki_get_wiki', 'wiki_list_wikis', 'wiki_list_pages', 'wiki_get_page', 'wiki_get_page_content', 'wiki_create_or_update_page', 'testplan_list_test_plans', 'testplan_create_test_plan', 'testplan_create_test_suite', 'testplan_add_test_cases_to_suite', 'testplan_create_test_case', 'testplan_update_test_case_steps', 'testplan_list_test_cases', 'testplan_show_test_results_from_build_id', 'search_code', 'search_wiki', 'search_workitem', 'advsec_get_alerts', 'advsec_get_alert_details']
+2025-12-07 01:26:41,487 - __main__ - INFO - Sending query to gpt-5-nano: How do I get the MIP SDK logs
+2025-12-07 01:26:56,826 - httpx - INFO - HTTP Request: POST https://agent-chat.cognitiveservices.azure.com/openai/v1/chat/completions "HTTP/1.1 200 OK"

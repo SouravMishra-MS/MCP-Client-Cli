@@ -1,0 +1,4 @@
+python-dotenv
+mcp[cli]
+openai
+aiohttp

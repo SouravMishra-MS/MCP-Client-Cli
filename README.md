@@ -1,6 +1,6 @@
 # MCP Client
 
-A universal command-line client for interacting with Model Context Protocol (MCP) servers. Supports stdio, SSE, and HTTP-based transports with Azure OpenAI integration for intelligent tool invocation.
+A command-line client for interacting with Model Context Protocol (MCP) servers. Supports stdio, SSE, and HTTP-based transports, with Azure OpenAI integration for tool calling.
 
 ## Features
 
@@ -45,25 +45,102 @@ pip install -e .
 
 ## Configuration
 
-Set these environment variables before running:
+### LLM profiles (llms.json)
+
+This client uses LLM profiles stored in `llms.json` (managed via the CLI).
+
+To manage profiles:
 
 ```bash
-# Azure OpenAI Configuration
-AZURE_OPENAI_ENDPOINT=https://<your-resource>.openai.azure.com/
-AZURE_OPENAI_API_KEY=<your-api-key>
-AZURE_OPENAI_MODEL=gpt-5-nano
-AZURE_OPENAI_DEPLOYMENT_NAME=<your-deployment>
-AZURE_OPENAI_API_VERSION=2024-08-01-preview
+mcp-client -l
 ```
 
-Create a `.env` file in the project root with these variables, or set them in your shell.
+Profiles look like:
+
+```json
+[
+  {
+    "name": "default-azure-openai",
+    "type": "azure_openai",
+    "endpoint": "https://<your-resource>.openai.azure.com/openai/v1/",
+    "api_key": "<YOUR_API_KEY>",
+    "model": "<your-deployment-name>",
+    "api_version": "2024-12-01-preview"
+  }
+]
+```
+
+Notes:
+
+- Currently only API key auth is supported.
+- For Azure OpenAI OpenAI-compatible endpoints, `model` is your deployment name.
+
+### Instruction files (instruction_files.json)
+
+You can store one or more markdown instruction files (for example, internal Copilot instruction prompts) and apply one during a chat session.
+
+- In interactive mode: choose **i = manage instruction files** to list/add/delete saved files.
+- Save an instruction file path: `mcp-client -i` (prompts) or `mcp-client -i <path>`.
+- Use an instruction file for one chat run: `mcp-client -c -i <path>`.
+- If you run `mcp-client -c` without `-i`, the client will ask if you want to use a saved instruction file.
+
+Example:
+
+```bash
+mcp-client -c -i InstructionFiles/copilot-instructions.md
+```
+
+### Guardrails (reducing hallucinations)
+
+This client can run in a strict mode that discourages the LLM from making up details. In strict mode, the assistant should:
+
+- Ask 1–3 clarifying questions when key context is missing
+- Avoid inventing schemas/identifiers/commands/config keys
+- Say it doesn't know when it cannot determine the correct answer from the conversation and tool outputs
+- Clearly label any examples as templates with placeholders
+
+Configure with these environment variables:
+
+```bash
+# Strict mode (default: true)
+MCP_STRICT_MODE=true
+
+# Lower temperature reduces creative guesswork (default: 0)
+AZURE_OPENAI_TEMPERATURE=0
+```
 
 ## Usage
 
-### Basic Command
+### Quick start (recommended)
+
+1. Install dependencies:
+
+```bash
+uv sync
+```
+
+2. Add an LLM profile:
+
+```bash
+mcp-client -l
+```
+
+3. Start chat (you will select an LLM profile and MCP server):
+
+```bash
+mcp-client -c
+```
+
+### Basic command
 
 ```bash
 mcp-client <server_script_path_or_url> [extra_args...]
+```
+
+If you want to apply an instruction file for this run:
+
+```bash
+mcp-client <server_script_path_or_url> -i InstructionFiles/copilot-instructions.md
 ```
 
 ### Examples
@@ -80,18 +157,13 @@ mcp-client <server_script_path_or_url> [extra_args...]
 
 ### Interactive Mode
 
-Once connected, you'll be presented with an interactive prompt:
+If you run `mcp-client` with no arguments, you will see a simple menu:
 
 ```
-Query: What are the use cases of MCP?
+Options: m=manage MCP servers, l=manage LLM profiles, i=manage instruction files, c=chat, q=quit
 ```
 
-Type your queries to interact with the MCP server's tools. The client will:
-
-1. Send your query to Azure OpenAI
-2. Identify relevant tools to call
-3. Execute those tools
-4. Return results to you
+In chat mode, type your question and the client will call tools as needed.
 
 #### Special Commands
 
@@ -120,7 +192,7 @@ The client automatically detects the server type:
 
 ## Logging
 
-All activity is logged to `client/logs/mcp_client.log`. Check this file for:
+All activity is logged to `logs/mcp_client.log`. Check this file for:
 
 - Connection details
 - Available tools from each server
@@ -138,7 +210,7 @@ mcp-client/
 │   ├── __init__.py
 │   ├── __main__.py          # CLI entry point
 │   ├── mcp_client.py        # Core MCPClient class
-│   └── logs/                # Generated logs
+├── logs/                    # Generated logs
 ├── pyproject.toml           # Package metadata
 ├── README.md                # This file
 └── requirements.txt         # Dependencies (optional)
@@ -176,8 +248,8 @@ This creates:
 
 ### Azure OpenAI Errors
 
-- Verify your `.env` file or environment variables are set
-- Check that your deployment name matches your model
+- Verify `llms.json` has a valid profile and you selected it
+- Check that your deployment name matches `model`
 
 ### Connection Failures
 
@@ -187,9 +259,9 @@ This creates:
 
 ## Security
 
-- Never commit `.env` files with real credentials
-- Use environment variables or secure credential managers in production
-- Rotate Azure OpenAI API keys regularly
+- `llms.json`, `servers.json`, and `instruction_files.json` are local config files (they are typically gitignored).
+- Treat `llms.json` like a secret because it contains your API key.
+- Rotate Azure OpenAI API keys regularly.
 
 ## License
 

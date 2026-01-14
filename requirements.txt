@@ -1,4 +1,7 @@
-python-dotenv
-mcp[cli]
+mcp
 openai
 aiohttp
+inquirer
+prompt_toolkit
+tabulate
+rich

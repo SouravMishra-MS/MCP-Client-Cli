@@ -2,12 +2,11 @@
 import json
 import os
 import re
-import sys
-import asyncio
 import logging
 
 from typing import Optional
 from contextlib import AsyncExitStack
+from rich.console import Console
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -15,9 +14,21 @@ from mcp.client.sse import sse_client
 from mcp.client.streamable_http import streamablehttp_client
 
 from openai import OpenAI
-from dotenv import load_dotenv
+console = Console()
 
-load_dotenv()
+
+STRICT_SYSTEM_PROMPT = """You are a careful assistant.
+
+Safety / reliability policy (generic):
+- Do NOT invent facts, identifiers, schemas, commands, configuration keys, APIs, file names, URLs, or query syntax.
+- If the user request is underspecified or depends on unknown context, ask 1–3 targeted clarifying questions.
+- If you still cannot determine the correct answer from the conversation and tool outputs, say you don't know.
+- If you provide an example, label it clearly as a template/pseudocode and use placeholders rather than guessing real names.
+
+Tool-grounding policy:
+- Prefer using available tools to look up or verify details.
+- Only cite sources that come directly from tool outputs.
+"""
 
 # Ensure log directory exists
 os.makedirs("logs", exist_ok=True)
@@ -48,31 +59,91 @@ class MCPClient:
       python mcp_client.py --http http://localhost:8080/mcp
     """
 
-    def __init__(self):
+    def __init__(self, llm_config: dict | None = None, instructions: str | None = None):
         self.session = None
         self.exit_stack = AsyncExitStack()
         self._connected_via: Optional[str] = None # "stdio" or "sse"
 
-        # Initialize the Azure OpenAI client
-        model_name = os.getenv("AZURE_OPENAI_MODEL")
-        deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
-        endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-        api_key = os.getenv("AZURE_OPENAI_API_KEY")
-        api_version = os.getenv("AZURE_OPENAI_API_VERSION")
+        self.llm_config: dict | None = llm_config
+        self.instructions: str | None = instructions
+        self.openai: OpenAI | None = None
+        self.model_name: str | None = None
 
-        print(f"Using Azure OpenAI Model: {model_name} (Deployment: {deployment_name})")
-        print(f"Azure OpenAI Endpoint: {endpoint}")
-        print(f"Azure OpenAI API Version: {api_version}")
-        print(f"Azure OpenAI API Key: {'SET' if api_key else 'NOT SET'}")
+        self.strict_mode = os.getenv("MCP_STRICT_MODE", "true").strip().lower() not in {"0", "false", "no", "off"}
 
-        if not endpoint or not api_key:
-            logger.warning("Azure OpenAI credentials not fully configured. Set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY.")
+        # Some models/endpoints reject custom temperature values (e.g., only the default is allowed).
+        # If AZURE_OPENAI_TEMPERATURE isn't set, omit the parameter entirely.
+        self.temperature: float | None
+        raw_temp = os.getenv("AZURE_OPENAI_TEMPERATURE")
+        if raw_temp is None or not raw_temp.strip():
+            self.temperature = None
+        else:
+            try:
+                self.temperature = float(raw_temp)
+            except ValueError:
+                self.temperature = None
 
+    def _resolve_value(self, value: str | None) -> str | None:
+        if not value:
+            return value
+        if value.startswith("env:"):
+            return os.getenv(value.split(":", 1)[1])
+        return value
+
+    def _ensure_openai_client(self) -> None:
+        if self.openai is not None:
+            return
+
+        if not self.llm_config:
+            raise RuntimeError("No LLM profile selected. Add/select an LLM profile before starting chat.")
+
+        endpoint = self._resolve_value(str(self.llm_config.get("endpoint", "") or ""))
+        api_key = self._resolve_value(str(self.llm_config.get("api_key", "") or ""))
+        model = self._resolve_value(str(self.llm_config.get("model", "") or ""))
+
+        if not endpoint:
+            raise RuntimeError("LLM profile is missing 'endpoint'.")
+        if not api_key:
+            raw_key = str(self.llm_config.get("api_key", "") or "")
+            if raw_key.startswith("env:"):
+                var_name = raw_key.split(":", 1)[1]
+                raise RuntimeError(
+                    "LLM profile api_key is set to 'env:%s' but that environment variable is not set. "
+                    "Edit the LLM profile to store a literal API key (current supported mode), or set the env var in your shell."
+                    % var_name
+                )
+            raise RuntimeError("LLM profile is missing 'api_key'.")
+        if not model:
+            raise RuntimeError("LLM profile is missing 'model' (Azure: deployment name).")
+
+        # Note: For now we only support API key authentication.
+        # Many Azure OpenAI-style endpoints expect the header name `api-key`.
         self.openai = OpenAI(
             base_url=endpoint,
-            api_key=api_key
+            api_key=api_key,
+            default_headers={"api-key": api_key},
         )
-        self.model_name = model_name
+        self.model_name = model
+
+    def _ensure_system_message(self, messages: list[dict]) -> list[dict]:
+        needs_system = self.strict_mode or bool(self.instructions)
+        if not needs_system:
+            return messages
+
+        parts: list[str] = []
+        if self.strict_mode:
+            parts.append(STRICT_SYSTEM_PROMPT)
+        if self.instructions:
+            parts.append("# Instruction file\n" + self.instructions)
+        combined = "\n\n".join(parts).strip()
+
+        if messages and messages[0].get("role") == "system":
+            existing = str(messages[0].get("content") or "")
+            if combined:
+                messages[0]["content"] = (combined + "\n\n" + existing).strip() if existing else combined
+            return messages
+
+        return ([{"role": "system", "content": combined}] if combined else []) + list(messages)
 
     # ------------------------------------------------------------------
     # Connection helpers
@@ -96,7 +167,7 @@ class MCPClient:
         response = await self.session.list_tools()
         tools = response.tools
         logger.info(f"Connected to SSE MCP Server at {server_url}. ")
-        logger.info(f"Available tools: {[tool.name for tool in tools]}")
+        # logger.info(f"Available tools: {[tool.name for tool in tools]}")
     
     async def connect_to_http_server(self, server_url: str):
         """
@@ -118,7 +189,7 @@ class MCPClient:
         response = await self.session.list_tools()
         tools = response.tools
         logger.info(f"Connected to Streamable HTTP MCP Server at {server_url}.")
-        logger.info(f"Available tools: {[tool.name for tool in tools]}")
+        # logger.info(f"Available tools: {[tool.name for tool in tools]}")
         self._connected_via = "http"
 
     async def connect_to_stdio_server(self, server_script_path: str, extra_args: list[str] | None = None):
@@ -176,7 +247,7 @@ class MCPClient:
         response = await self.session.list_tools()
         tools = response.tools
         logger.info(f"Connected to stdio MCP Server using {command} {args}. ")
-        logger.info(f"Available tools: {[tool.name for tool in tools]}")
+        # logger.info(f"Available tools: {[tool.name for tool in tools]}")
 
 
     async def connect_to_server(self, server_path_or_url: str, extra_args: list[str] | None = None):
@@ -214,6 +285,8 @@ class MCPClient:
         if previous_messages:
             messages.extend(previous_messages)
 
+        messages = self._ensure_system_message(messages)
+
         messages.append(
             {
                 "role": "user",
@@ -231,17 +304,34 @@ class MCPClient:
             }
         } for tool in response.tools]
 
-
         # Initialize OpenAI API call
+        self._ensure_openai_client()
         logger.info(f"Sending query to {self.model_name}: {query}")
-        completion = self.openai.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
-            tools=available_tools
-        )
+        def _create_completion():
+            kwargs = {
+                "model": self.model_name,
+                "messages": messages,
+                "tools": available_tools,
+            }
+            if self.temperature is not None:
+                kwargs["temperature"] = self.temperature
+            return self.openai.chat.completions.create(**kwargs)
+
+        try:
+            completion = _create_completion()
+        except Exception as e:
+            # Some models only allow the default temperature. If so, retry once without it.
+            msg = str(e)
+            if self.temperature is not None and "temperature" in msg and "Only the default" in msg:
+                logger.warning("Model rejected temperature=%s; retrying without temperature.", self.temperature)
+                self.temperature = None
+                completion = _create_completion()
+            else:
+                raise
 
         # Process the response and handle tool calls
         final_response = []
+        citations = []
         assistant_message = completion.choices[0].message
 
         if assistant_message.content:
@@ -255,7 +345,23 @@ class MCPClient:
                 # Execute tool call
                 logger.debug(f"Calling tool {tool_name} with args {tool_args}...")
                 result = await self.session.call_tool(tool_name, tool_args)
-                final_response.append(f"[Calling tool {tool_name}]")
+                
+                # Extract tool result content
+                tool_result_content = str(result.content) if hasattr(result, 'content') else str(result)
+                
+                # Parse citations from tool result if it's JSON
+                try:
+                    if isinstance(result.content, str):
+                        result_data = json.loads(result.content) if result.content.startswith('[') else result.content
+                        if isinstance(result_data, list):
+                            for item in result_data:
+                                if isinstance(item, dict) and 'contentUrl' in item:
+                                    citations.append({
+                                        'title': item.get('title', 'Unknown'),
+                                        'url': item.get('contentUrl', '')
+                                    })
+                except (json.JSONDecodeError, AttributeError):
+                    pass
 
                 # Add assistant message to conversation
                 messages.append({
@@ -274,7 +380,6 @@ class MCPClient:
                 })
 
                 # Add tool result to conversation
-                tool_result_content = str(result.content) if hasattr(result, 'content') else str(result)
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
@@ -282,12 +387,18 @@ class MCPClient:
                     "content": tool_result_content
                 })
 
-                # Get the next response from model
-                next_completion = self.openai.chat.completions.create(
-                    model=self.model_name,
-                    messages=messages,
-                    tools=available_tools
-                )
+                # Get the next response from model for summarization
+                with console.status("[bold green]Thinking..."):
+                    try:
+                        next_completion = _create_completion()
+                    except Exception as e:
+                        msg = str(e)
+                        if self.temperature is not None and "temperature" in msg and "Only the default" in msg:
+                            logger.warning("Model rejected temperature=%s; retrying without temperature.", self.temperature)
+                            self.temperature = None
+                            next_completion = _create_completion()
+                        else:
+                            raise
 
                 next_message = next_completion.choices[0].message
                 if next_message.content:
@@ -298,7 +409,15 @@ class MCPClient:
                     "content": next_message.content or ""
                 })
             
-        return "\n".join(final_response), messages
+        # Format final response with citations
+        formatted_response = "\n".join(final_response)
+        
+        if citations:
+            formatted_response += "\n\n## Sources\n"
+            for i, citation in enumerate(citations, 1):
+                formatted_response += f"{i}. [{citation['title']}]({citation['url']})\n"
+        
+        return formatted_response, messages
     
     async def chat_loop(self):
         """
@@ -310,13 +429,22 @@ class MCPClient:
         while True:
             try:
                 query = input("\nQuery: ").strip()
-                if query.lower() in ["quit", "exit"]:
-                    break
+            except (KeyboardInterrupt, EOFError):
+                print("\nExiting chat...")
+                break
 
-                # Check if the user wants to refresh conversation (history)
-                if query.lower() == "refresh":
-                    previous_messages = []
+            if not query:
+                continue
 
+            if query.lower() in ["quit", "exit"]:
+                break
+
+            # Check if the user wants to refresh conversation (history)
+            if query.lower() == "refresh":
+                previous_messages = []
+                continue
+
+            try:
                 response, previous_messages = await self.process_query(query=query, previous_messages=previous_messages)
                 print(f"\nResponse: {response}")
             except Exception as e:

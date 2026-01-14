@@ -12,3 +12,13 @@ wheels/
 # Environment variables files
 .env
 .env.*
+
+# Runtime logs
+logs/
+client/logs/
+*.log
+
+# Local configuration (user-specific)
+servers.json
+llms.json
+instruction_files.json

@@ -19,6 +19,11 @@ client/logs/
 *.log
 
 # Local configuration (user-specific)
+# local directories
+InstructionFiles/
+
+# local files
 servers.json
 llms.json
 instruction_files.json
+

@@ -8,6 +8,7 @@ from typing import Any
 from rich.console import Console
 from rich.table import Table
 from rich.prompt import Prompt
+from rich.text import Text
 
 from .mcp_client import MCPClient
 
@@ -17,6 +18,128 @@ CONFIG_PATH = Path(__file__).resolve().parent.parent / "servers.json"
 LLM_CONFIG_PATH = Path(__file__).resolve().parent.parent / "llms.json"
 INSTRUCTIONS_CONFIG_PATH = Path(__file__).resolve().parent.parent / "instruction_files.json"
 
+
+_BANNER = r'''
+M"""""`'"""`YM MM'""""'YMM MM"""""""`YM    MM"""""""`YM oo          oo          
+M  mm.  mm.  M M' .mmm. `M MM  mmmmm  M    MM  mmmmm  M                         
+M  MMM  MMM  M M  MMMMMooM M'        .M    M'        .M dP dP.  .dP dP .d8888b. 
+M  MMM  MMM  M M  MMMMMMMM MM  MMMMMMMM    MM  MMMMMMMM 88  `8bd8'  88 88ooood8 
+M  MMM  MMM  M M. `MMM' .M MM  MMMMMMMM    MM  MMMMMMMM 88  .d88b.  88 88.  ... 
+M  MMM  MMM  M MM.     .dM MM  MMMMMMMM    MM  MMMMMMMM dP dP'  `dP dP `88888P' 
+MMMMMMMMMMMMMM MMMMMMMMMMM MMMMMMMMMMMM    MMMMMMMMMMMM                                                 
+'''
+
+
+def print_banner() -> None:
+    console.print(_BANNER, style="bold magenta", highlight=False)
+    console.print("A lightweight MCP playground for rapid testing.", style="dim", highlight=False)
+    # console.print()
+    console.print("[version] v0.1.0", style="dim", markup=False, highlight=False)
+    console.print()
+
+def _is_quit_token(value: str) -> bool:
+    v = (value or "").strip().lower()
+    return v in {"q", "quit", "exit"}
+
+
+def _prompt_toolkit_select_one(
+    message: str,
+    labels: list[str],
+    *,
+    allow_cancel: bool = True,
+) -> int | None:
+    """Return selected index into `labels`, or None if cancelled/unavailable."""
+    if not labels:
+        return None
+
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return None
+
+    from prompt_toolkit.application import Application
+    from prompt_toolkit.formatted_text import FormattedText
+    from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.layout import HSplit, Layout
+    from prompt_toolkit.layout.controls import FormattedTextControl
+    from prompt_toolkit.layout.containers import Window
+    from prompt_toolkit.layout.dimension import Dimension
+    from prompt_toolkit.styles import Style
+
+    entries: list[tuple[str, int | None]] = []
+    if allow_cancel:
+        entries.append(("(cancel)", None))
+    entries.extend([(label, i) for i, label in enumerate(labels)])
+
+    cursor = 0
+    if allow_cancel and labels:
+        cursor = 1
+
+    def _render() -> FormattedText:
+        lines: list[tuple[str, str]] = []
+        lines.append(("", f"{message}\n"))
+        lines.append(("class:help", "Up/Down=move  Enter=select  Esc/Ctrl+C=cancel\n\n"))
+
+        for i, (label, _idx) in enumerate(entries):
+            style = "class:cursor" if i == cursor else ""
+            lines.append((style, f"{label}\n"))
+        return lines
+
+    kb = KeyBindings()
+    result: int | None = None
+
+    @kb.add("up")
+    def _up(event):
+        nonlocal cursor
+        cursor = max(0, cursor - 1)
+
+    @kb.add("down")
+    def _down(event):
+        nonlocal cursor
+        cursor = min(len(entries) - 1, cursor + 1)
+
+    @kb.add("enter")
+    def _enter(event):
+        nonlocal result
+        _label, idx = entries[cursor]
+        result = idx
+        event.app.exit(result=result)
+
+    @kb.add("escape")
+    @kb.add("c-c")
+    def _cancel(event):
+        event.app.exit(result=None)
+
+    control = FormattedTextControl(_render)
+    root = HSplit(
+        [
+            Window(
+                content=control,
+                always_hide_cursor=True,
+                height=Dimension(min=8),
+            )
+        ]
+    )
+    style = Style.from_dict({"cursor": "reverse", "help": "dim"})
+    app = Application(layout=Layout(root), key_bindings=kb, full_screen=False, style=style)
+
+    # In asyncio-driven contexts, prompt_toolkit may choose an async runner.
+    # Run UI in a thread to keep this function synchronous.
+    import threading
+
+    out: dict[str, Any] = {"result": None, "error": None}
+
+    def _runner():
+        try:
+            out["result"] = app.run()
+        except Exception as exc:
+            out["error"] = exc
+
+    t = threading.Thread(target=_runner, daemon=True)
+    t.start()
+    t.join()
+
+    if out["error"] is not None:
+        return None
+    return out["result"]
 
 def load_instruction_files() -> list[dict[str, Any]]:
     if not INSTRUCTIONS_CONFIG_PATH.exists():
@@ -73,6 +196,18 @@ def select_instruction_file_interactive(items: list[dict[str, Any]], message: st
         console.print("[yellow]No saved instruction files available.[/yellow]")
         return None
 
+    labels = [
+        f"{idx+1}. {str(item.get('name',''))} -> {str(item.get('path',''))}"
+        for idx, item in enumerate(items)
+    ]
+
+    try:
+        picked_idx = _prompt_toolkit_select_one(message, labels, allow_cancel=True)
+        if picked_idx is not None:
+            return items[picked_idx]
+    except Exception:
+        pass
+
     try:
         if not (sys.stdin.isatty() and sys.stdout.isatty()):
             raise RuntimeError("stdin/stdout is not a TTY")
@@ -107,8 +242,8 @@ def select_instruction_file_interactive(items: list[dict[str, Any]], message: st
     except Exception as e:
         console.log(f"[dim]Interactive picker unavailable ({e}); falling back to number entry.[/dim]")
         render_instruction_files(items)
-        selection = Prompt.ask("Enter number of instruction file to use (or blank to cancel)", default="")
-        if not selection.strip():
+        selection = Prompt.ask("Enter number of instruction file to use (or blank/q to cancel)", default="")
+        if not selection.strip() or _is_quit_token(selection):
             return None
         try:
             return items[int(selection) - 1]
@@ -181,7 +316,7 @@ async def manage_instruction_files_menu() -> None:
         console.print("\nOptions: [b]l[/b]=list, [b]n[/b]=new & save, [b]d[/b]=delete, [b]b[/b]=back, [b]q[/b]=quit")
         choice = Prompt.ask("Choose option", default="l").lower().strip()
 
-        if choice == "q":
+        if _is_quit_token(choice):
             raise SystemExit(0)
         if choice == "b":
             return
@@ -251,6 +386,17 @@ def select_llm_interactive(llms: list[dict[str, Any]], message: str) -> dict[str
         console.print("[yellow]No saved LLM profiles available.[/yellow]")
         return None
 
+    labels = [
+        f"{idx+1}. {str(llm.get('name',''))} ({str(llm.get('type',''))})" for idx, llm in enumerate(llms)
+    ]
+
+    try:
+        picked_idx = _prompt_toolkit_select_one(message, labels, allow_cancel=True)
+        if picked_idx is not None:
+            return llms[picked_idx]
+    except Exception:
+        pass
+
     try:
         if not (sys.stdin.isatty() and sys.stdout.isatty()):
             raise RuntimeError("stdin/stdout is not a TTY")
@@ -265,7 +411,7 @@ def select_llm_interactive(llms: list[dict[str, Any]], message: str) -> dict[str
                 term = Terminal()
                 self.List.selection_color = term.bold_white_on_blue
 
-        choices = [f"{idx+1}. {str(llm.get('name',''))} ({str(llm.get('type',''))})" for idx, llm in enumerate(llms)]
+        choices = labels
         answer = inquirer.prompt(
             [inquirer.List("llm", message=message, choices=["(cancel)", *choices])],
             theme=_Theme(),
@@ -282,8 +428,8 @@ def select_llm_interactive(llms: list[dict[str, Any]], message: str) -> dict[str
     except Exception as e:
         console.log(f"[dim]Interactive picker unavailable ({e}); falling back to number entry.[/dim]")
         render_llms(llms)
-        selection = Prompt.ask("Enter number of LLM profile to use (or blank to cancel)", default="")
-        if not selection.strip():
+        selection = Prompt.ask("Enter number of LLM profile to use (or blank/q to cancel)", default="")
+        if not selection.strip() or _is_quit_token(selection):
             return None
         try:
             return llms[int(selection) - 1]
@@ -362,7 +508,7 @@ async def manage_llms_menu() -> None:
         console.print("\nOptions: [b]l[/b]=list LLMs, [b]n[/b]=new & save, [b]e[/b]=edit, [b]d[/b]=delete, [b]b[/b]=back, [b]q[/b]=quit  [dim](Note: currently only API key auth is supported.)[/dim]")
         choice = Prompt.ask("Choose option", default="l").lower().strip()
 
-        if choice == "q":
+        if _is_quit_token(choice):
             raise SystemExit(0)
         if choice == "b":
             return
@@ -777,7 +923,7 @@ async def manage_servers_menu() -> None:
         console.print("\nOptions: [b]l[/b]=list servers, [b]n[/b]=new & save, [b]e[/b]=edit, [b]d[/b]=delete, [b]i[/b]=inspect capabilities, [b]b[/b]=back, [b]q[/b]=quit")
         choice = Prompt.ask("Choose option", default="l").lower().strip()
 
-        if choice == "q":
+        if _is_quit_token(choice):
             raise SystemExit(0)
         if choice == "b":
             return
@@ -811,7 +957,7 @@ def choose_server_for_chat() -> tuple[str, list[str]] | None:
         default_choice = "s" if servers else "a"
         choice = Prompt.ask("Choose option", default=default_choice).lower().strip()
 
-        if choice == "q":
+        if _is_quit_token(choice):
             raise SystemExit(0)
         if choice == "b":
             return None
@@ -887,7 +1033,7 @@ async def main(
     extra_args: list[str] | None = None,
     instruction_text: str | None = None,
 ):
-    console.print("[bold cyan]Welcome to MCP Client[/bold cyan]\n")
+    print_banner()
 
     def require_llm_selection() -> dict[str, Any] | None:
         llms = load_llms()
@@ -1002,10 +1148,20 @@ async def main(
 
     # Interactive mode: separate management vs chat, and always select a server before chat.
     while True:
-        console.print("\nOptions: [b]m[/b]=manage MCP servers, [b]l[/b]=manage LLM profiles, [b]i[/b]=manage instruction files, [b]c[/b]=chat, [b]q[/b]=quit")
+        console.print("\n[bold yellow]Available Options[/bold yellow]")
+        line = Text(); line.append("c", style="bold"); line.append("  Chat — [select an LLM and an MCP server, then start chatting]")
+        console.print(line)
+        line = Text(); line.append("m", style="bold"); line.append("  Manage MCP servers — [add/edit/delete saved MCP server connections]")
+        console.print(line)
+        line = Text(); line.append("l", style="bold"); line.append("  Manage LLM profiles — [add/edit/delete your LLM endpoint + model settings]")
+        console.print(line)
+        line = Text(); line.append("i", style="bold"); line.append("  Manage instruction files — [save reusable markdown prompts for chat sessions]")
+        console.print(line)
+        line = Text(); line.append("q", style="bold"); line.append("  Quit — [close the app (you can also type 'quit' or 'exit')]")
+        console.print(line)
         choice = Prompt.ask("Choose option", default="c").lower().strip()
 
-        if choice == "q":
+        if _is_quit_token(choice):
             break
         if choice == "m":
             try:
@@ -1146,7 +1302,7 @@ def cli_main():
 
     if args.chat:
         async def chat_only():
-            console.print("[bold cyan]Welcome to MCP Client[/bold cyan]\n")
+            print_banner()
 
             # Select LLM first (then MCP server selection), to match the interactive chat flow.
             llms = load_llms()

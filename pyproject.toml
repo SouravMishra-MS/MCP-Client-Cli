@@ -32,3 +32,8 @@ build-backend = "setuptools.build_meta"
 where = ["."]
 include = ["client*"]  # Only include mcp_client package
 
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.18.0",
+]
+

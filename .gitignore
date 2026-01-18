@@ -6,6 +6,10 @@ dist/
 wheels/
 *.egg-info
 
+# PyInstaller
+*.spec
+!mcp-client.spec
+
 # Virtual environments
 .venv
 

@@ -3,6 +3,7 @@ import json
 import os
 import re
 import logging
+from pathlib import Path
 
 from typing import Optional
 from contextlib import AsyncExitStack
@@ -66,6 +67,7 @@ class MCPClient:
 
         self.llm_config: dict | None = llm_config
         self.instructions: str | None = instructions
+        self.base_instructions: str | None = self._load_base_instructions()
         self.openai: OpenAI | None = None
         self.model_name: str | None = None
 
@@ -82,6 +84,42 @@ class MCPClient:
                 self.temperature = float(raw_temp)
             except ValueError:
                 self.temperature = None
+
+    @staticmethod
+    def _default_base_instructions_path() -> Path:
+        # Repo layout: <root>/client/mcp_client.py and <root>/InstructionFiles/copilot-instructions.md
+        return Path(__file__).resolve().parent.parent / "InstructionFiles" / "copilot-instructions.md"
+
+    @staticmethod
+    def _strip_instructions_fence(text: str) -> str:
+        """If the text is wrapped in a ```instructions fenced block, return its inner content."""
+        normalized = (text or "").replace("\r\n", "\n").strip()
+        if not normalized:
+            return ""
+        if not normalized.startswith("```instructions"):
+            return normalized
+
+        first_newline = normalized.find("\n")
+        if first_newline == -1:
+            return normalized
+
+        closing = normalized.rfind("\n```")
+        if closing == -1 or closing <= first_newline:
+            return normalized
+
+        return normalized[first_newline + 1 : closing].strip()
+
+    def _load_base_instructions(self) -> str | None:
+        try:
+            p = self._default_base_instructions_path()
+            if not p.exists():
+                return None
+            content = p.read_text(encoding="utf-8")
+            content = self._strip_instructions_fence(content)
+            return content or None
+        except Exception:
+            # Base instructions are optional; failure should not block the CLI.
+            return None
 
     def _resolve_value(self, value: str | None) -> str | None:
         if not value:
@@ -126,15 +164,19 @@ class MCPClient:
         self.model_name = model
 
     def _ensure_system_message(self, messages: list[dict]) -> list[dict]:
-        needs_system = self.strict_mode or bool(self.instructions)
+        needs_system = bool(self.base_instructions) or self.strict_mode or bool(self.instructions)
         if not needs_system:
             return messages
 
         parts: list[str] = []
+        if self.base_instructions:
+            parts.append(self.base_instructions)
         if self.strict_mode:
-            parts.append(STRICT_SYSTEM_PROMPT)
+            parts.append("# Strict mode\n" + STRICT_SYSTEM_PROMPT)
         if self.instructions:
-            parts.append("# Instruction file\n" + self.instructions)
+            user_inst = self._strip_instructions_fence(self.instructions)
+            if user_inst:
+                parts.append("# User instruction file\n" + user_inst)
         combined = "\n\n".join(parts).strip()
 
         if messages and messages[0].get("role") == "system":

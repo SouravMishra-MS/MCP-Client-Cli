@@ -43,11 +43,21 @@ pip install -e .
 - Python 3.13+
 - Azure OpenAI API credentials (for tool execution)
 
+## Windows Executable (.exe)
+
+If you are using the packaged Windows executable (`mcp-client.exe`), see the exe-specific guide:
+
+- [docs/README_EXE.md](docs/README_EXE.md)
+
+Azure DevOps MCP testing guide:
+
+- [docs/README_ADO_MCP.md](docs/README_ADO_MCP.md)
+
 ## Configuration
 
-### LLM profiles (llms.json)
+### LLM profiles (config/llms.json)
 
-This client uses LLM profiles stored in `llms.json` (managed via the CLI).
+This client uses LLM profiles stored in `config/llms.json` (managed via the CLI).
 
 To manage profiles:
 
@@ -259,7 +269,7 @@ This creates:
 
 ## Security
 
-- `llms.json`, `servers.json`, and `instruction_files.json` are local config files (they are typically gitignored).
+- `config/llms.json`, `config/servers.json`, and `instruction_files.json` are local config files (they are typically gitignored).
 - Treat `llms.json` like a secret because it contains your API key.
 - Rotate Azure OpenAI API keys regularly.
 

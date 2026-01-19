@@ -14,9 +14,68 @@ from .mcp_client import MCPClient
 
 console = Console()
 
-CONFIG_PATH = Path(__file__).resolve().parent.parent / "servers.json"
-LLM_CONFIG_PATH = Path(__file__).resolve().parent.parent / "llms.json"
-INSTRUCTIONS_CONFIG_PATH = Path(__file__).resolve().parent.parent / "instruction_files.json"
+
+def _get_app_base_dir() -> Path:
+    """Resolve the base directory for persistent config files.
+
+    - Source/dev mode: repo root (parent of the `client/` package)
+    - PyInstaller onefile/onedir: directory containing the executable
+    """
+    if getattr(sys, "frozen", False):
+        try:
+            return Path(sys.executable).resolve().parent
+        except Exception:
+            return Path.cwd()
+    return Path(__file__).resolve().parent.parent
+
+
+_BASE_DIR = _get_app_base_dir()
+
+
+def _ensure_config_dir() -> Path:
+    cfg = _BASE_DIR / "config"
+    try:
+        cfg.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        # If we can't create the directory for some reason, fall back to base dir.
+        return _BASE_DIR
+    return cfg
+
+
+_CONFIG_DIR = _ensure_config_dir()
+
+
+def _migrate_legacy_config_file(filename: str) -> None:
+    """Move legacy root-level config file into config/ if needed.
+
+    - Prior versions stored JSON files directly under _BASE_DIR.
+    - New behavior stores them under _CONFIG_DIR.
+    """
+    try:
+        legacy = _BASE_DIR / filename
+        target = _CONFIG_DIR / filename
+        if target.exists() or not legacy.exists():
+            return
+
+        # Best-effort move; if move fails (cross-device, perms), fall back to copy.
+        try:
+            legacy.replace(target)
+        except Exception:
+            target.write_text(legacy.read_text(encoding="utf-8"), encoding="utf-8")
+    except Exception:
+        # Migration should never prevent startup.
+        return
+
+
+CONFIG_PATH = _CONFIG_DIR / "servers.json"
+LLM_CONFIG_PATH = _CONFIG_DIR / "llms.json"
+
+# Keep instruction_files.json at the app base dir for now (not requested to move).
+INSTRUCTIONS_CONFIG_PATH = _BASE_DIR / "instruction_files.json"
+
+
+_migrate_legacy_config_file("servers.json")
+_migrate_legacy_config_file("llms.json")
 
 
 _BANNER = r'''
@@ -356,6 +415,38 @@ def _mask_secret(value: str | None) -> str:
     return "***"
 
 
+def _mask_secret_preview(value: str | None) -> str:
+    """Mask a secret for on-screen confirmation.
+
+    Shows only the last 4 characters (when available) and masks the rest with '*'.
+    """
+    if not value:
+        return ""
+    raw = str(value)
+    if len(raw) <= 4:
+        return "*" * len(raw)
+    return ("*" * (len(raw) - 4)) + raw[-4:]
+
+
+def _prompt_api_key(message: str) -> str:
+    """Prompt for an API key with real-time '*' masking.
+
+    Rich's password prompt uses getpass on many platforms (no echo until Enter).
+    To give immediate feedback for paste/type, prefer prompt_toolkit when available.
+    """
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        try:
+            from prompt_toolkit import prompt as pt_prompt
+
+            # is_password=True masks input with '*', including pasted text.
+            return pt_prompt(f"{message}: ", is_password=True) or ""
+        except Exception:
+            pass
+
+    # Fallback: hidden entry (no echo) but still secure.
+    return Prompt.ask(message, password=True) or ""
+
+
 def render_llms(llms: list[dict[str, Any]]) -> None:
     console.print("\n[bold yellow]Available LLM profiles:[/bold yellow]")
     if not llms:
@@ -439,12 +530,14 @@ def select_llm_interactive(llms: list[dict[str, Any]], message: str) -> dict[str
 
 
 def add_llm_flow(llms: list[dict[str, Any]]) -> None:
-    name = Prompt.ask("Name this LLM profile", default="default-azure-openai")
+    name = Prompt.ask("Name this LLM profile", default="eg: default-azure-openai")
     llm_type = Prompt.ask("LLM type", default="azure_openai")
     endpoint = Prompt.ask("Endpoint / base_url", default="https://<your-resource>.openai.azure.com/openai/v1/")
     model = Prompt.ask("Model (Azure: deployment name)", default="<your-deployment-name>")
 
-    api_key = Prompt.ask("API key (will be stored in llms.json)", password=True)
+    api_key = _prompt_api_key("API key (will be stored in llms.json)")
+    if api_key:
+        console.print(f"[dim]Captured API key:[/dim] {_mask_secret_preview(api_key)}")
 
     api_version = Prompt.ask("API version (optional)", default="")
     llms.append(
@@ -480,7 +573,10 @@ def edit_llm_flow(llms: list[dict[str, Any]]) -> None:
     llm["api_version"] = Prompt.ask("API version (optional)", default=current_api_version)
 
     if Prompt.ask("Update API key? (y/n)", default="n").lower() == "y":
-        llm["api_key"] = Prompt.ask("API key (will be stored in llms.json)", password=True)
+        new_key = _prompt_api_key("API key (will be stored in llms.json)")
+        llm["api_key"] = new_key
+        if new_key:
+            console.print(f"[dim]Captured API key:[/dim] {_mask_secret_preview(new_key)}")
     else:
         llm["api_key"] = current_key
 
@@ -562,6 +658,62 @@ def prompt_extra_args_edit(existing_args: list[str]) -> list[str]:
     return [arg.strip() for arg in args_input.split(",") if arg.strip()]
 
 
+def _mask_env_value(key: str, value: str) -> str:
+    k = (key or "").lower()
+    if any(t in k for t in ("token", "pat", "key", "secret", "password")):
+        return "***"
+    return value
+
+
+def prompt_env_vars(existing: dict[str, str] | None = None) -> dict[str, str]:
+    """Prompt for env vars as comma-separated KEY=VALUE pairs.
+
+    Returns the merged env dict (existing plus updates).
+
+    Rules:
+    - Empty input keeps existing unchanged.
+    - Entering KEY= (empty value) deletes that key.
+    """
+    existing = dict(existing or {})
+    if Prompt.ask("Add environment variables? (y/n)", default="n").lower() != "y":
+        return existing
+
+    if existing:
+        keys = ", ".join(sorted([str(k) for k in existing.keys()]))
+        console.print(f"[dim]Current env keys:[/dim] {keys}")
+        console.print("[dim]Leave blank to keep as-is. Use KEY= to delete a key.[/dim]")
+
+    raw = Prompt.ask("Enter env vars (comma-separated KEY=VALUE)", default="").strip()
+    if not raw:
+        return existing
+
+    out: dict[str, str] = dict(existing)
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "=" not in part:
+            console.print(f"[yellow]Skipping invalid env entry (expected KEY=VALUE):[/yellow] {part}")
+            continue
+        k, v = part.split("=", 1)
+        k = k.strip()
+        v = v.strip().strip('"').strip("'")
+        if not k:
+            continue
+        if v == "":
+            out.pop(k, None)
+        else:
+            out[k] = v
+    return out
+
+
+def prompt_env_vars_edit(existing: dict[str, str] | None = None) -> dict[str, str]:
+    existing = dict(existing or {})
+    if Prompt.ask("Edit environment variables? (y/n)", default="n").lower() != "y":
+        return existing
+    return prompt_env_vars(existing)
+
+
 def render_saved_servers(servers: list[dict[str, Any]]) -> None:
     console.print("\n[bold yellow]Available MCP servers:[/bold yellow]")
     if not servers:
@@ -571,14 +723,21 @@ def render_saved_servers(servers: list[dict[str, Any]]) -> None:
     table = Table(show_header=True, header_style="bold magenta")
     table.add_column("#", style="dim", width=4)
     table.add_column("Name")
+    table.add_column("Command")
     table.add_column("URL / Path")
     table.add_column("Extra Args")
+    table.add_column("Env")
     for idx, srv in enumerate(servers, 1):
+        env = srv.get("env", {}) or {}
+        env_keys = " ".join(sorted([str(k) for k in env.keys()]))
+        cmd = str(srv.get("command", "") or "")
         table.add_row(
             str(idx),
             str(srv.get("name", "")),
+            cmd,
             str(srv.get("url", "")),
             " ".join(srv.get("extra_args", []) or []),
+            env_keys,
         )
     console.print(table)
 
@@ -587,9 +746,31 @@ def _format_server_choice(srv: dict[str, Any]) -> str:
     name = str(srv.get("name", ""))
     url = str(srv.get("url", ""))
     extra_args = " ".join(srv.get("extra_args", []) or [])
+    env = srv.get("env", {}) or {}
+    env_keys = ",".join(sorted([str(k) for k in env.keys()]))
+    cmd = str(srv.get("command", "") or "").strip()
+    cmd_prefix = f"[cmd:{cmd}] " if cmd else ""
     if extra_args:
-        return f"{name} -> {url} ({extra_args})"
-    return f"{name} -> {url}"
+        suffix = f" ({extra_args})"
+        if env_keys:
+            suffix += f" [env:{env_keys}]"
+        return f"{cmd_prefix}{name} -> {url}{suffix}"
+    if env_keys:
+        return f"{cmd_prefix}{name} -> {url} [env:{env_keys}]"
+    return f"{cmd_prefix}{name} -> {url}"
+
+
+def _prompt_command_override(existing: str | None = None) -> str:
+    """Optional override for how a stdio server is launched.
+
+    Examples:
+    - npx (for npm packages)
+    - uvx (for python package runners like microsoft-fabric-rti-mcp)
+    Leave blank to keep auto-detect behavior.
+    """
+    default_val = (existing or "").strip()
+    raw = Prompt.ask("Command override (blank=auto)", default=default_val).strip()
+    return raw
 
 
 def select_server_interactive(
@@ -850,9 +1031,14 @@ def select_servers_interactive(
 
 def add_server_flow(servers: list[dict[str, Any]]) -> tuple[str, list[str]]:
     name = Prompt.ask("Name this MCP server (alias)", default="default")
-    url = Prompt.ask("Enter MCP server path or URL", default="https://learn.microsoft.com/api/mcp")
+    url = Prompt.ask("Enter MCP server path or URL", default="")
+    cmd = _prompt_command_override("")
     extra_args = prompt_extra_args()
-    servers.append({"name": name, "url": url, "extra_args": extra_args})
+    env = prompt_env_vars({})
+    server: dict[str, Any] = {"name": name, "url": url, "extra_args": extra_args, "env": env}
+    if cmd:
+        server["command"] = cmd
+    servers.append(server)
     save_servers(servers)
     console.print(f"[green]Saved server '{name}'[/green]")
     return url, extra_args
@@ -884,31 +1070,50 @@ def edit_server_flow(servers: list[dict[str, Any]]) -> None:
 
     current_name = str(server.get("name", ""))
     current_url = str(server.get("url", ""))
+    current_cmd = str(server.get("command", "") or "")
     current_args = server.get("extra_args", []) or []
+    current_env = server.get("env", {}) or {}
 
     new_name = Prompt.ask("Name (alias)", default=current_name)
     new_url = Prompt.ask("Server path or URL", default=current_url)
+    new_cmd = _prompt_command_override(current_cmd)
     new_args = prompt_extra_args_edit(list(current_args))
+    new_env = prompt_env_vars_edit(dict(current_env))
 
     server["name"] = new_name
     server["url"] = new_url
+    if new_cmd.strip():
+        server["command"] = new_cmd.strip()
+    else:
+        server.pop("command", None)
     server["extra_args"] = new_args
+    server["env"] = new_env
     save_servers(servers)
     console.print(f"[green]Updated server '{new_name}'[/green]")
 
 
-def select_saved_server_flow(servers: list[dict[str, Any]]) -> tuple[str, list[str]] | None:
+def select_saved_server_flow(servers: list[dict[str, Any]]) -> tuple[str, list[str], dict[str, str], str] | None:
     selected = select_server_interactive(servers, message="Select desired MCP server", allow_cancel=True)
     if not selected:
         return None
-    return selected.get("url", ""), selected.get("extra_args", []) or []
+    return (
+        selected.get("url", ""),
+        selected.get("extra_args", []) or [],
+        selected.get("env", {}) or {},
+        str(selected.get("command", "") or ""),
+    )
 
 
-async def inspect_server_capabilities(server_input: str, session_args: list[str]) -> None:
+async def inspect_server_capabilities(
+    server_input: str,
+    session_args: list[str],
+    session_env: dict[str, str],
+    session_command: str,
+) -> None:
     client = MCPClient()
     try:
         console.print(f"\n[bold cyan]Connecting to {server_input}...[/bold cyan]")
-        await client.connect_to_server(server_input, extra_args=session_args)
+        await client.connect_to_server(server_input, extra_args=session_args, env=session_env, command=(session_command or None))
         await display_server_capabilities(client)
     except Exception as e:
         console.print(f"[bold red]Error inspecting server: {e}[/bold red]")
@@ -943,8 +1148,8 @@ async def manage_servers_menu() -> None:
             selected = select_saved_server_flow(servers)
             if not selected:
                 continue
-            server_input, session_args = selected
-            await inspect_server_capabilities(server_input, session_args)
+            server_input, session_args, session_env, session_command = selected
+            await inspect_server_capabilities(server_input, session_args, session_env, session_command)
             continue
 
         console.print("[red]Invalid option; try again.[/red]")
@@ -963,7 +1168,9 @@ def choose_server_for_chat() -> tuple[str, list[str]] | None:
             return None
         if choice == "a":
             url = Prompt.ask("Enter MCP server path or URL", default="https://learn.microsoft.com/api/mcp")
+            choose_server_for_chat._selected_command = _prompt_command_override("")  # type: ignore[attr-defined]
             extra_args = prompt_extra_args()
+            choose_server_for_chat._selected_env = prompt_env_vars({})  # type: ignore[attr-defined]
             return url, extra_args
         if choice == "s":
             picked = select_servers_interactive(servers, message="Select desired MCP server(s)")
@@ -971,6 +1178,8 @@ def choose_server_for_chat() -> tuple[str, list[str]] | None:
                 # For compatibility, if user chose exactly one server, return a single server tuple.
                 if len(picked) == 1:
                     srv = picked[0]
+                    choose_server_for_chat._selected_env = srv.get("env", {}) or {}  # type: ignore[attr-defined]
+                    choose_server_for_chat._selected_command = str(srv.get("command", "") or "")  # type: ignore[attr-defined]
                     return srv.get("url", ""), srv.get("extra_args", []) or []
 
                 # Multi-select: encode as a special marker tuple; caller will handle.
@@ -978,6 +1187,8 @@ def choose_server_for_chat() -> tuple[str, list[str]] | None:
                 # (Kept minimal to avoid changing too many call sites.)
                 choose_server_for_chat._multi_selected = picked  # type: ignore[attr-defined]
                 first = picked[0]
+                choose_server_for_chat._selected_env = first.get("env", {}) or {}  # type: ignore[attr-defined]
+                choose_server_for_chat._selected_command = str(first.get("command", "") or "")  # type: ignore[attr-defined]
                 return first.get("url", ""), first.get("extra_args", []) or []
             continue
 
@@ -1045,13 +1256,20 @@ async def main(
     async def run_chat_session(
         server_input: str,
         session_args: list[str],
+        session_env: dict[str, str] | None,
+        session_command: str | None,
         llm_profile: dict[str, Any],
         instruction_text: str | None,
     ):
         client = MCPClient(llm_config=llm_profile, instructions=instruction_text)
         try:
             console.print(f"\n[bold cyan]Connecting to {server_input}...[/bold cyan]")
-            await client.connect_to_server(server_input, extra_args=session_args)
+            await client.connect_to_server(
+                server_input,
+                extra_args=session_args,
+                env=session_env or {},
+                command=session_command or None,
+            )
             console.print("\n[bold yellow]Chat[/bold yellow]")
             console.print("[dim]Type 'quit' to exit or 'refresh' to clear history[/dim]\n")
             await client.chat_loop()
@@ -1068,17 +1286,29 @@ async def main(
         clients: list[MCPClient] = []
         histories: list[list] = []
         labels: list[str] = []
-        targets: list[tuple[str, list[str]]] = []
+        targets: list[tuple[str, list[str], dict[str, str], str]] = []
 
         for srv in picked_servers:
             labels.append(str(srv.get("name", "")) or str(srv.get("url", "")))
-            targets.append((str(srv.get("url", "")), srv.get("extra_args", []) or []))
+            targets.append(
+                (
+                    str(srv.get("url", "")),
+                    srv.get("extra_args", []) or [],
+                    srv.get("env", {}) or {},
+                    str(srv.get("command", "") or ""),
+                )
+            )
 
         try:
             console.print(f"\n[bold cyan]Connecting to {len(targets)} MCP servers...[/bold cyan]")
-            for (server_input, session_args) in targets:
+            for (server_input, session_args, session_env, session_command) in targets:
                 client = MCPClient(llm_config=llm_profile, instructions=instruction_text)
-                await client.connect_to_server(server_input, extra_args=session_args)
+                await client.connect_to_server(
+                    server_input,
+                    extra_args=session_args,
+                    env=session_env,
+                    command=(session_command or None),
+                )
                 clients.append(client)
                 histories.append([])
 
@@ -1142,7 +1372,7 @@ async def main(
             console.print("[bold red]No LLM selected; exiting.[/bold red]")
             console.print("\n[bold cyan]MCP Client closed![/bold cyan]")
             return
-        await run_chat_session(server_input, session_args, llm_profile, instruction_text)
+        await run_chat_session(server_input, session_args, {}, None, llm_profile, instruction_text)
         console.print("\n[bold cyan]MCP Client closed![/bold cyan]")
         return
 
@@ -1211,11 +1441,21 @@ async def main(
             picked_servers = getattr(choose_server_for_chat, "_multi_selected", None)
             if picked_servers:
                 delattr(choose_server_for_chat, "_multi_selected")
+                if hasattr(choose_server_for_chat, "_selected_env"):
+                    delattr(choose_server_for_chat, "_selected_env")
+                if hasattr(choose_server_for_chat, "_selected_command"):
+                    delattr(choose_server_for_chat, "_selected_command")
                 await run_multi_server_chat(picked_servers, llm_profile, instruction_text)
                 continue
 
             server_input, session_args = selected
-            await run_chat_session(server_input, session_args, llm_profile, instruction_text)
+            session_env = getattr(choose_server_for_chat, "_selected_env", {}) or {}
+            if hasattr(choose_server_for_chat, "_selected_env"):
+                delattr(choose_server_for_chat, "_selected_env")
+            session_command = getattr(choose_server_for_chat, "_selected_command", "") or ""
+            if hasattr(choose_server_for_chat, "_selected_command"):
+                delattr(choose_server_for_chat, "_selected_command")
+            await run_chat_session(server_input, session_args, session_env, session_command, llm_profile, instruction_text)
             continue
 
         console.print("[red]Invalid option; try again.[/red]")
@@ -1353,11 +1593,29 @@ def cli_main():
             if not selected:
                 return
 
-            async def run_chat_session(server_input: str, session_args: list[str]):
+            session_env = getattr(choose_server_for_chat, "_selected_env", {}) or {}
+            if hasattr(choose_server_for_chat, "_selected_env"):
+                delattr(choose_server_for_chat, "_selected_env")
+
+            session_command = getattr(choose_server_for_chat, "_selected_command", "") or ""
+            if hasattr(choose_server_for_chat, "_selected_command"):
+                delattr(choose_server_for_chat, "_selected_command")
+
+            async def run_chat_session(
+                server_input: str,
+                session_args: list[str],
+                session_env: dict[str, str] | None,
+                session_command: str | None,
+            ):
                 client = MCPClient(llm_config=llm_profile, instructions=instruction_text)
                 try:
                     console.print(f"\n[bold cyan]Connecting to {server_input}...[/bold cyan]")
-                    await client.connect_to_server(server_input, extra_args=session_args)
+                    await client.connect_to_server(
+                        server_input,
+                        extra_args=session_args,
+                        env=session_env or {},
+                        command=(session_command or None),
+                    )
                     console.print("\n[bold yellow]Chat[/bold yellow]")
                     console.print("[dim]Type 'quit' to exit or 'refresh' to clear history[/dim]\n")
                     await client.chat_loop()
@@ -1370,17 +1628,29 @@ def cli_main():
                 clients: list[MCPClient] = []
                 histories: list[list] = []
                 labels: list[str] = []
-                targets: list[tuple[str, list[str]]] = []
+                targets: list[tuple[str, list[str], dict[str, str], str]] = []
 
                 for srv in picked_servers:
                     labels.append(str(srv.get("name", "")) or str(srv.get("url", "")))
-                    targets.append((str(srv.get("url", "")), srv.get("extra_args", []) or []))
+                    targets.append(
+                        (
+                            str(srv.get("url", "")),
+                            srv.get("extra_args", []) or [],
+                            srv.get("env", {}) or {},
+                            str(srv.get("command", "") or ""),
+                        )
+                    )
 
                 try:
                     console.print(f"\n[bold cyan]Connecting to {len(targets)} MCP servers...[/bold cyan]")
-                    for (server_input, session_args) in targets:
+                    for (server_input, session_args, server_env, server_command) in targets:
                         client = MCPClient(llm_config=llm_profile, instructions=instruction_text)
-                        await client.connect_to_server(server_input, extra_args=session_args)
+                        await client.connect_to_server(
+                            server_input,
+                            extra_args=session_args,
+                            env=server_env,
+                            command=(server_command or None),
+                        )
                         clients.append(client)
                         histories.append([])
 
@@ -1437,11 +1707,15 @@ def cli_main():
             picked_servers = getattr(choose_server_for_chat, "_multi_selected", None)
             if picked_servers:
                 delattr(choose_server_for_chat, "_multi_selected")
+                if hasattr(choose_server_for_chat, "_selected_env"):
+                    delattr(choose_server_for_chat, "_selected_env")
+                if hasattr(choose_server_for_chat, "_selected_command"):
+                    delattr(choose_server_for_chat, "_selected_command")
                 await run_multi_server_chat(picked_servers)
                 return
 
             server_input, session_args = selected
-            await run_chat_session(server_input, session_args)
+            await run_chat_session(server_input, session_args, session_env, session_command)
 
         asyncio.run(chat_only())
         return

@@ -4,8 +4,9 @@ import os
 import re
 import logging
 from pathlib import Path
+import sys
 
-from typing import Optional
+from typing import Optional, Any
 from contextlib import AsyncExitStack
 from rich.console import Console
 
@@ -15,6 +16,12 @@ from mcp.client.sse import sse_client
 from mcp.client.streamable_http import streamablehttp_client
 
 from openai import OpenAI
+
+try:
+    # Available in openai-python v1.x
+    from openai import AzureOpenAI  # type: ignore
+except Exception:  # pragma: no cover
+    AzureOpenAI = None  # type: ignore
 console = Console()
 
 
@@ -29,10 +36,38 @@ Safety / reliability policy (generic):
 Tool-grounding policy:
 - Prefer using available tools to look up or verify details.
 - Only cite sources that come directly from tool outputs.
+
+Environment-access policy:
+- Do NOT claim you "can't access the user's environment" in a generic way.
+- In this app, you *can* access the connected MCP server tools when they exist.
+- If the needed information isn't available via tools or the user hasn't provided enough context (e.g., org/project/wiki page name), ask 1–3 targeted questions.
+- If the server/tools don't expose what you need, say so explicitly (e.g., "No MCP tool is available for X"), and offer a practical next step.
 """
 
-# Ensure log directory exists
-os.makedirs("logs", exist_ok=True)
+def _get_app_base_dir() -> Path:
+    """Resolve the base directory for persistent runtime files.
+
+    - Source/dev mode: repo root (parent of the `client/` package)
+    - PyInstaller onefile/onedir: directory containing the executable
+    """
+    if getattr(sys, "frozen", False):
+        try:
+            return Path(sys.executable).resolve().parent
+        except Exception:
+            return Path.cwd()
+    return Path(__file__).resolve().parent.parent
+
+
+_APP_BASE_DIR = _get_app_base_dir()
+_LOG_DIR = _APP_BASE_DIR / "logs"
+
+# Ensure log directory exists (prefer beside exe when frozen)
+try:
+    _LOG_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    # Fall back to CWD if base dir isn't writable.
+    _LOG_DIR = Path.cwd() / "logs"
+    _LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -40,10 +75,31 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("logs/mcp_client.log"),
+        logging.FileHandler(str(_LOG_DIR / "mcp_client.log"), encoding="utf-8"),
         logging.StreamHandler()
     ]
 )
+
+
+def _redact_sensitive(value):
+    """Best-effort redaction for log output."""
+    try:
+        if isinstance(value, dict):
+            out = {}
+            for k, v in value.items():
+                key = str(k).lower()
+                if any(t in key for t in ("key", "token", "secret", "password", "pat")):
+                    out[k] = "***"
+                else:
+                    out[k] = _redact_sensitive(v)
+            return out
+        if isinstance(value, list):
+            return [_redact_sensitive(v) for v in value]
+        if isinstance(value, str) and len(value) > 500:
+            return value[:500] + "…"
+        return value
+    except Exception:
+        return "***"
 
 
 class MCPClient:
@@ -68,7 +124,8 @@ class MCPClient:
         self.llm_config: dict | None = llm_config
         self.instructions: str | None = instructions
         self.base_instructions: str | None = self._load_base_instructions()
-        self.openai: OpenAI | None = None
+        # Can be OpenAI or AzureOpenAI depending on endpoint type.
+        self.openai: Any | None = None
         self.model_name: str | None = None
 
         self.strict_mode = os.getenv("MCP_STRICT_MODE", "true").strip().lower() not in {"0", "false", "no", "off"}
@@ -87,8 +144,17 @@ class MCPClient:
 
     @staticmethod
     def _default_base_instructions_path() -> Path:
-        # Repo layout: <root>/client/mcp_client.py and <root>/InstructionFiles/copilot-instructions.md
-        return Path(__file__).resolve().parent.parent / "InstructionFiles" / "copilot-instructions.md"
+        # Source/dev mode: <root>/InstructionFiles/copilot-instructions.md
+        # PyInstaller: <exe_dir>/InstructionFiles/copilot-instructions.md
+        if getattr(sys, "frozen", False):
+            try:
+                base_dir = Path(sys.executable).resolve().parent
+            except Exception:
+                base_dir = Path.cwd()
+        else:
+            base_dir = Path(__file__).resolve().parent.parent
+
+        return base_dir / "InstructionFiles" / "copilot-instructions.md"
 
     @staticmethod
     def _strip_instructions_fence(text: str) -> str:
@@ -135,9 +201,11 @@ class MCPClient:
         if not self.llm_config:
             raise RuntimeError("No LLM profile selected. Add/select an LLM profile before starting chat.")
 
+        llm_type = str(self.llm_config.get("type", "") or "").strip().lower()
         endpoint = self._resolve_value(str(self.llm_config.get("endpoint", "") or ""))
         api_key = self._resolve_value(str(self.llm_config.get("api_key", "") or ""))
         model = self._resolve_value(str(self.llm_config.get("model", "") or ""))
+        api_version = self._resolve_value(str(self.llm_config.get("api_version", "") or ""))
 
         if not endpoint:
             raise RuntimeError("LLM profile is missing 'endpoint'.")
@@ -154,10 +222,40 @@ class MCPClient:
         if not model:
             raise RuntimeError("LLM profile is missing 'model' (Azure: deployment name).")
 
-        # Note: For now we only support API key authentication.
-        # Many Azure OpenAI-style endpoints expect the header name `api-key`.
+        # Azure OpenAI supports two common endpoint styles:
+        #   1) OpenAI-compatible: https://<resource>.<domain>/openai/v1/
+        #   2) Azure-style:       https://<resource>.<domain>/ (or mistakenly copied as .../openai/deployments/)
+        #      which requires api-version and uses /openai/deployments/{deployment}/chat/completions
+
+        normalized_endpoint = str(endpoint).strip()
+        endpoint_lower = normalized_endpoint.lower()
+
+        # If the user provided an Azure deployments base URL, switch to AzureOpenAI automatically.
+        looks_like_azure_deployments_base = "/openai/deployments" in endpoint_lower
+
+        if llm_type == "azure_openai" and looks_like_azure_deployments_base:
+            if AzureOpenAI is None:
+                raise RuntimeError(
+                    "This LLM profile looks like an Azure OpenAI deployments endpoint, but the installed openai package "
+                    "does not provide AzureOpenAI. Upgrade openai-python (v1.x) or switch your endpoint to an OpenAI-compatible /openai/v1/ URL."
+                )
+            if not api_version:
+                raise RuntimeError("LLM profile is missing 'api_version' (required for Azure OpenAI deployments endpoint style).")
+
+            # Convert '.../openai/deployments/' to 'https://<resource>.<domain>'
+            azure_endpoint = normalized_endpoint.split("/openai/", 1)[0].rstrip("/")
+            self.openai = AzureOpenAI(
+                azure_endpoint=azure_endpoint,
+                api_key=api_key,
+                api_version=api_version,
+            )
+            self.model_name = model
+            return
+
+        # Default: OpenAI-compatible client (works for Azure OpenAI's /openai/v1/ endpoints too).
+        # Note: Many Azure OpenAI-style endpoints expect the header name `api-key`.
         self.openai = OpenAI(
-            base_url=endpoint,
+            base_url=normalized_endpoint,
             api_key=api_key,
             default_headers={"api-key": api_key},
         )
@@ -234,7 +332,13 @@ class MCPClient:
         # logger.info(f"Available tools: {[tool.name for tool in tools]}")
         self._connected_via = "http"
 
-    async def connect_to_stdio_server(self, server_script_path: str, extra_args: list[str] | None = None):
+    async def connect_to_stdio_server(
+        self,
+        server_script_path: str,
+        extra_args: list[str] | None = None,
+        env: dict[str, str] | None = None,
+        command_override: str | None = None,
+    ):
         """
         Connect to a stdio MCP server.
         """
@@ -245,36 +349,55 @@ class MCPClient:
         if extra_args is None:
             extra_args = []
 
-        # Detect npm package vs file path
-        # Heuristic:
-        #   - starts with '@'  => scoped npm package
-        #   - no '/'           => treat as npm package name
-        if server_script_path.startswith("@") or "/" not in server_script_path:
-            # npm package: use npx
-            is_javascript = True
-            command = "npx"
-
-            # If user explicitly passed "-y", don't add it again.
-            # Otherwise, default to "-y" so npx doesn't prompt interactively.
-            if extra_args and extra_args[0] == "-y":
-                args = [server_script_path, *extra_args]
+        # Optional override: lets users run stdio servers via different launchers (e.g., uvx).
+        cmd = (command_override or "").strip() or None
+        if cmd:
+            command = cmd
+            if command.lower() == "npx":
+                # Preserve our npx behavior: default to -y unless explicitly provided.
+                if extra_args and extra_args[0] == "-y":
+                    args = [server_script_path, *extra_args]
+                else:
+                    args = ["-y", server_script_path, *extra_args]
             else:
-                args = ["-y", server_script_path, *extra_args]
+                # Generic runner: first arg is the target (package/script), followed by extra args.
+                args = [server_script_path, *extra_args]
         else:
-            # Local file path
-            is_python = server_script_path.endswith(".py")
-            is_javascript = server_script_path.endswith(".js")
+            # Detect npm package vs file path
+            # Heuristic:
+            #   - starts with '@'  => scoped npm package
+            #   - no '/'           => treat as npm package name
+            if server_script_path.startswith("@") or "/" not in server_script_path:
+                # npm package: use npx
+                is_javascript = True
+                command = "npx"
 
-            if not (is_python or is_javascript):
-                raise ValueError("Server script must be a .py, .js file or npm package.")
-            
-            command = "python" if is_python else "node"
-            args = [server_script_path, *extra_args]
+                # If user explicitly passed "-y", don't add it again.
+                # Otherwise, default to "-y" so npx doesn't prompt interactively.
+                if extra_args and extra_args[0] == "-y":
+                    args = [server_script_path, *extra_args]
+                else:
+                    args = ["-y", server_script_path, *extra_args]
+            else:
+                # Local file path
+                is_python = server_script_path.endswith(".py")
+                is_javascript = server_script_path.endswith(".js")
+
+                if not (is_python or is_javascript):
+                    raise ValueError("Server script must be a .py, .js file or npm package.")
+
+                command = "python" if is_python else "node"
+                args = [server_script_path, *extra_args]
         
+        merged_env: dict[str, str] | None = None
+        if env:
+            merged_env = dict(os.environ)
+            merged_env.update({str(k): str(v) for k, v in env.items()})
+
         server_params = StdioServerParameters(
             command=command,
             args=args,
-            env=None
+            env=merged_env,
         )
 
         logger.debug(f"Connecting to stdio MCP server with command: {command} and args: {args}")
@@ -291,7 +414,13 @@ class MCPClient:
         logger.info(f"Connected to stdio MCP Server using {command} {args}. ")
         # logger.info(f"Available tools: {[tool.name for tool in tools]}")
 
-    async def connect_to_server(self, server_path_or_url: str, extra_args: list[str] | None = None):
+    async def connect_to_server(
+        self,
+        server_path_or_url: str,
+        extra_args: list[str] | None = None,
+        env: dict[str, str] | None = None,
+        command: str | None = None,
+    ):
         """
         Connect to an MCP server (either stdio or SSE).
         """
@@ -313,7 +442,12 @@ class MCPClient:
                     raise
         else:
             # It's a script path - connect to stdio server
-            await self.connect_to_stdio_server(server_path_or_url, extra_args=extra_args or [])
+            await self.connect_to_stdio_server(
+                server_path_or_url,
+                extra_args=extra_args or [],
+                env=env,
+                command_override=command,
+            )
         
     async def process_query(self, query: str, previous_messages: list = None) -> tuple[str, list]:
         """
@@ -384,8 +518,17 @@ class MCPClient:
                 tool_args = json.loads(tool_call.function.arguments)
 
                 # Execute tool call
-                logger.debug(f"Calling tool {tool_name} with args {tool_args}...")
+                logger.info("Calling MCP tool: %s args=%s", tool_name, _redact_sensitive(tool_args))
                 result = await self.session.call_tool(tool_name, tool_args)
+
+                try:
+                    # Avoid logging huge payloads; just confirm something came back.
+                    content_preview = str(getattr(result, "content", ""))
+                    if len(content_preview) > 300:
+                        content_preview = content_preview[:300] + "…"
+                    logger.info("MCP tool result: %s content_preview=%s", tool_name, content_preview)
+                except Exception:
+                    logger.info("MCP tool result: %s (unavailable preview)", tool_name)
                 
                 # Extract tool result content
                 tool_result_content = str(result.content) if hasattr(result, 'content') else str(result)

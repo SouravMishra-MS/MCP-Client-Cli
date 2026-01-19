@@ -249,7 +249,6 @@ class MCPClient:
         logger.info(f"Connected to stdio MCP Server using {command} {args}. ")
         # logger.info(f"Available tools: {[tool.name for tool in tools]}")
 
-
     async def connect_to_server(self, server_path_or_url: str, extra_args: list[str] | None = None):
         """
         Connect to an MCP server (either stdio or SSE).
